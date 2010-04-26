@@ -81,20 +81,52 @@ class Superload
     
     // technique learned from:
     // http://stackoverflow.com/questions/928928/determining-what-classes-are-defined-in-a-php-class-file
+    // (replaced with state machine to implement namespace support)
     private function scan_file($file) {
         
-        $tokens     = token_get_all(file_get_contents($file));
-        $count      = count($tokens);
         $classes    = array();
+        $namespace  = '';
+        $state      = 'out';
         
-        for ($i = 2; $i < $count; $i++) {
-            if (($tokens[$i - 2][0] == T_CLASS || $tokens[$i - 2][0] == T_INTERFACE) &&
-                 $tokens[$i - 1][0] == T_WHITESPACE &&
-                 $tokens[$i - 0][0] == T_STRING) {
-                
-                // TODO: make this namespace-aware
-                $classes[] = $tokens[$i][1];
-            
+        foreach (token_get_all(file_get_contents($file)) as $token) {
+            switch ($state) {
+                case 'out':
+                    if ($token[0] == T_NAMESPACE) {
+                        $namespace = '';
+                        $state = 'ns1';
+                    } elseif ($token[0] == T_CLASS || $token[0] == T_INTERFACE) {
+                        $state = 'c1';
+                    }
+                    break;
+                case 'ns1':
+                    if ($token[0] == T_WHITESPACE) {
+                        $state = 'ns2';
+                    } else {
+                        $state = 'out';
+                    }
+                    break;
+                case 'ns2':
+                    if ($token[0] == T_STRING || $token ==  '\\') {
+                        $namespace .= is_array($token) ? $token[1] : $token;
+                    } else {
+                        $state = 'out';
+                    }
+                    break;
+                case 'c1':
+                    if ($token[0] == T_WHITESPACE) {
+                        $state = 'c2';
+                    } else {
+                        $state = 'out';
+                    }
+                    break;
+                case 'c2':
+                    if ($token[0] == T_STRING) {
+                        $class_name = $token[1];
+                        if ($namespace) $class_name = $namespace . '\\' . $class_name;
+                        $classes[] = $class_name;
+                    }
+                    $state = 'out';
+                    break;
             }
         }
         
