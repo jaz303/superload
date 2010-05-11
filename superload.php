@@ -87,8 +87,12 @@ class Superload
         $classes    = array();
         $namespace  = '';
         $state      = 'out';
+        $skip_next  = false;
         
         foreach (token_get_all(file_get_contents($file)) as $token) {
+            if ($token[0] == T_HALT_COMPILER) {
+                break;
+            }
             switch ($state) {
                 case 'out':
                     if ($token[0] == T_NAMESPACE) {
@@ -96,6 +100,10 @@ class Superload
                         $state = 'ns1';
                     } elseif ($token[0] == T_CLASS || $token[0] == T_INTERFACE) {
                         $state = 'c1';
+                    } elseif ($token[0] == T_COMMENT || $token[0] == T_DOC_COMMENT) {
+                        if (strpos($token[1], 'superload-ignore') !== false) {
+                            $skip_next = true;
+                        }
                     }
                     break;
                 case 'ns1':
@@ -106,7 +114,7 @@ class Superload
                     }
                     break;
                 case 'ns2':
-                    if ($token[0] == T_STRING || $token ==  '\\') {
+                    if ($token[0] == T_STRING || $token[0] ==  T_NS_SEPARATOR) {
                         $namespace .= is_array($token) ? $token[1] : $token;
                     } else {
                         $state = 'out';
@@ -121,9 +129,12 @@ class Superload
                     break;
                 case 'c2':
                     if ($token[0] == T_STRING) {
-                        $class_name = $token[1];
-                        if ($namespace) $class_name = $namespace . '\\' . $class_name;
-                        $classes[] = $class_name;
+                        if (!$skip_next) {
+                            $class_name = $token[1];
+                            if ($namespace) $class_name = $namespace . '\\' . $class_name;
+                            $classes[] = $class_name;
+                        }
+                        $skip_next = false;
                     }
                     $state = 'out';
                     break;
